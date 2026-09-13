@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+.pytest_cache/
 
 # Virtual environments
 venv/
@@ -28,10 +29,21 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
-# Project-specific: cached SQLite databases
+# Project: machine-local security-hook state
+.mimosa/
+
+# Project: raw datasets kept locally but intentionally untracked
+data/raw/liggitt_kubernetes_training.jsonl
+data/raw/pohly_kubernetes_training.jsonl
+
+# Project: generated artifacts (regenerable from scripts/ — see
+# docs/methodology/rag_reproduction.md)
+data/processed/
+indexes/
+models/
+hf_cache/
 .reviewer_cache/
 
-
-
-# Old cloned subdirectory (has its own .git)
-ReviewBrainer/
+# Logs and temporary artifacts
+*.log
+*.tmp

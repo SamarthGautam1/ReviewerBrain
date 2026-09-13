@@ -1,223 +1,105 @@
-# ReviewerBrain — `collect_reviews.py`
+# ReviewerBrain
 
-A resumable Python script that mines GitHub pull-request history and extracts
-`(code diff, reviewer comment)` pairs for **one specific reviewer**, formatted
-as JSON Lines for LLM fine-tuning.
+ReviewerBrain replicates the review behavior of a specific GitHub code
+reviewer — not a generic reviewer — by converting that person's historical
+PR review comments into a reviewer-specific retrieval knowledge base (RAG),
+and later fine-tuning a local LLM on the same data. Everything runs locally:
+no cloud APIs, no data egress.
 
----
+## Problem
 
-## Prerequisites
+Senior maintainers review new code with strong personal conventions: what
+they look at first, what they always ask about, how terse or verbose they
+are. Generic LLM review does not capture any individual's judgment. The
+question ReviewerBrain studies is: given one reviewer's history, how well
+can we retrieve the historical reviews that matter for a new diff, and
+eventually generate the review that reviewer would have written?
 
-- Python 3.10+
-- A GitHub Personal Access Token (PAT) with at least **`repo` scope** (or
-  `public_repo` for public repositories only).
+## Core Idea
+
+Each reviewer's merged-PR history is mined into `(diff hunk → review
+comment)` pairs. The pairs are cleaned, represented in a comment-first
+embedding format, and indexed per reviewer in a local vector database.
+Given a new diff, the system retrieves the most similar historical reviews
+from that reviewer — reusable reviewer-specific knowledge that later
+conditions a fine-tuned local model.
+
+## Current Pipeline
 
 ```
-pip install -r requirements.txt
+GitHub history → preprocessing → reviewer-specific knowledge (RAG index)
+              → retrieval → local LLM (planned) → personalized review
 ```
 
----
+## Current Status
 
-## Setting your GitHub token
+- **Data collection: complete** for the current experiment
+  (thockin/kubernetes, ezyang/pytorch — see `data/raw/`).
+- **Preprocessing: complete** — 1,995 thockin + 669 ezyang cleaned examples
+  (2,664 combined), produced by `scripts/data/clean_dataset.py` plus
+  `scripts/data/apply_clean_amendments.py`.
+- **RAG: validated** — comment-first representation, ChromaDB cosine
+  indexes, deterministic leakage-free held-out evaluation (496 queries).
+- **Quantum-inspired retrieval (fidelity = cos²): evaluated** — produced
+  *no measurable advantage* over cosine; cosine is the frozen metric.
+- **LoRA/QLoRA fine-tuning: NOT started.**
+- **Ollama inference: NOT started.**
 
-**Linux / macOS / Git Bash:**
-```bash
-export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
+## Repository Structure
 
-**Windows PowerShell:**
-```powershell
-$env:GITHUB_TOKEN = "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-```
-
-**Windows Command Prompt:**
-```cmd
-set GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-> ⚠️ Never hard-code or commit your token. The script refuses to start if
-> `GITHUB_TOKEN` is unset.
-
----
-
-## Usage
-
-### Dry run (no file written — prints 5 PRs to stdout)
-```bash
-python collect_reviews.py \
-  --repo python/cpython \
-  --reviewer gvanrossum \
-  --dry-run \
-  --max-prs 5
-```
-
-### Capped run (write up to 50 matched PRs)
-```bash
-python collect_reviews.py \
-  --repo pandas-dev/pandas \
-  --reviewer jreback \
-  --output jreback_reviews.jsonl \
-  --max-prs 50
-```
-
-### Full run (all merged PRs, resumable)
-```bash
-python collect_reviews.py \
-  --repo pandas-dev/pandas \
-  --reviewer jreback \
-  --output jreback_reviews.jsonl
-```
-
-### Resume an interrupted run
-Simply re-run the exact same command. The script reads the output file on
-startup, notes which PR numbers are already present, and skips them.
-
-```bash
-# First run (killed after 10 minutes):
-python collect_reviews.py --repo pandas-dev/pandas --reviewer jreback \
-  --output jreback_reviews.jsonl
-
-# Resume (picks up where it left off):
-python collect_reviews.py --repo pandas-dev/pandas --reviewer jreback \
-  --output jreback_reviews.jsonl
-```
-
----
-
-## All flags
-
-| Flag | Default | Description |
-|---|---|---|
-| `--repo` | *(required)* | Repository as `owner/name` |
-| `--reviewer` | *(required)* | GitHub username to filter by |
-| `--output` | `{reviewer}_{repo}_reviews.jsonl` | Output file path |
-| `--dry-run` | `False` | Print to stdout, don't write file |
-| `--max-prs` | *(unlimited)* | Stop after N matched PRs |
-| `--delay` | `0.5` | Seconds between API calls |
-| `--page-size` | `50` | PRs per GraphQL page (reduce if node-limit errors occur) |
-| `--log-level` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
-
----
-
-## Output schema (JSON Lines)
-
-One JSON object per line, one PR per object:
-
-```json
-{
-  "pr_number": 12345,
-  "pr_title": "Fix memory leak in read_csv",
-  "pr_url": "https://github.com/pandas-dev/pandas/pull/12345",
-  "pr_description": "This PR fixes ...",
-  "author": "contributor_username",
-  "merged_at": "2023-06-15T14:23:01Z",
-  "files_changed": [
-    {
-      "filename": "pandas/io/parsers.py",
-      "status": "modified",
-      "patch": "@@ -100,7 +100,7 @@ ...",
-      "additions": 3,
-      "deletions": 1
-    }
-  ],
-  "review_comments": [
-    {
-      "comment_id": 987654321,
-      "path": "pandas/io/parsers.py",
-      "line": 104,
-      "diff_hunk": "@@ -100,7 +100,7 @@\n ...",
-      "body": "This should use `_ensure_index` instead.",
-      "created_at": "2023-06-14T09:11:00Z",
-      "in_reply_to_id": null
-    }
-  ],
-  "pr_level_reviews": [
-    {
-      "state": "CHANGES_REQUESTED",
-      "body": "A few nits below — please address before merging.",
-      "submitted_at": "2023-06-14T09:11:00Z"
-    }
-  ]
-}
-```
-
-**`review_comments`** are inline comments attached to a specific file and line,
-including the surrounding diff hunk for context.
-
-**`pr_level_reviews`** are PR-level summaries (APPROVED / CHANGES_REQUESTED /
-DISMISSED). Pure COMMENTED reviews with no body text are omitted (they are
-already captured as inline comments).
-
----
-
-## Rate limits & expected runtime
-
-The script uses a **hybrid strategy**: GraphQL for cheap reviewer-participation
-discovery (one paginated query covers ~50 PRs), then REST only for file patches
-on matched PRs. This is dramatically more efficient than pure REST for large repos.
-
-| Pool | Limit (authenticated) | Notes |
-|---|---|---|
-| REST | 5,000 req / hr | Used for `/pulls/{n}/files` only |
-| GraphQL | 5,000 pts / hr | Used for PR discovery pages |
-
-**Automatic safeguards built into the script:**
-- Monitors `X-RateLimit-Remaining` after every call; sleeps to reset time if
-  quota drops below 50 (overridable via `RATE_LIMIT_BUFFER` env var).
-- Retries HTTP 403 / 429 / 5xx with exponential backoff (up to 5 attempts).
-- Detects GraphQL-level `RATE_LIMITED` errors and sleeps 60 s.
-- Configurable `--delay` (default 0.5 s) between calls to avoid GitHub's
-  secondary (undocumented) rate limiter.
-
-**Estimated runtime:**
-
-| Repo size (merged PRs) | Reviewer match rate | Estimated runtime |
-|---|---|---|
-| 1,000 | 20 % | ~5 min |
-| 5,000 | 10 % | ~25 min |
-| 10,000 | 10 % | ~50 min |
-| 50,000 | 5 % | ~4 hrs (spans ≥2 rate-limit windows) |
-
-For very large repos, use `--max-prs` to run in batches overnight. Because the
-script is resumable, you can chain multiple capped runs safely.
-
----
-
-## Troubleshooting
-
-| Error | Fix |
+| Directory | Contents |
 |---|---|
-| `GITHUB_TOKEN environment variable is not set` | Set the env var (see above) |
-| `GraphQL node limit exceeded. Reduce --page-size.` | Add `--page-size 25` |
-| `HTTP 401` | Token is invalid or expired — generate a new PAT |
-| Output file has duplicate lines | Should never happen; if it does, deduplicate with `sort -u` or the Python one-liner below |
+| `data/raw/` | Raw PR-level JSONL datasets (Git LFS) + reviewer-candidate CSV |
+| `data/processed/` | Cleaned datasets (generated, gitignored, regenerable) |
+| `src/reviewerbrain/` | Source package: representation, embeddings, split, metrics, config |
+| `scripts/` | Runnable CLIs: `data/`, `retrieval/`, `evaluation/` |
+| `configs/rag/default.yaml` | Frozen RAG configuration (mirrored by tests) |
+| `indexes/chroma/v2/` | Validated ChromaDB indexes (generated, gitignored) |
+| `evaluations/heldout/` | Frozen 496-query held-out evaluation artifact (LFS) |
+| `evaluations/reports/` | Reports for the validated representation and evaluation |
+| `docs/methodology/` | Reproducibility documentation |
+| `docs/experiments/` | Historical stage reports (audit, cleaning, v1 RAG) |
+| `experiments/archive/` | Superseded scripts (v1 RAG) |
+| `tests/` | Unit tests for representation, split, paths, config |
 
-**Deduplicate output (if needed):**
-```python
-import json
-from pathlib import Path
+Source vs generated: everything under `src/`, `scripts/`, `configs/`,
+`tests/`, `docs/` is source; `data/processed/`, `indexes/`,
+`evaluations/heldout/` are generated (see `docs/methodology/rag_reproduction.md`
+for exact regeneration commands).
 
-p = Path("jreback_reviews.jsonl")
-seen = set()
-lines = []
-for line in p.read_text().splitlines():
-    obj = json.loads(line)
-    if obj["pr_number"] not in seen:
-        seen.add(obj["pr_number"])
-        lines.append(line)
-p.write_text("\n".join(lines) + "\n")
+## Current RAG Configuration (frozen)
+
+- Embedding model: `all-MiniLM-L6-v2`, 384 dims, 256-token window, CPU
+- Document: comment-first — `Reviewer comment / File / Relevant diff`,
+  diff anchored-trimmed to the commented line (exact rule in
+  `src/reviewerbrain/retrieval/representation.py`)
+- Index: ChromaDB, cosine space, per-reviewer collections
+  (`indexes/chroma/v2/`)
+- Retrieval: top-k = 3, cosine gate ≥ 0.5 (results below dropped)
+- Evaluation split: per reviewer, every 5th PR (sorted by number) held out
+
+## Evaluation
+
+Held-out evaluation over 496 leakage-free queries (same-file hit@1/3/5 =
+24.6/34.7/40.1%; same-directory 37.9/50.4/56.9%). Relevance is measured by
+objective file-location proxies, not human labels — retrieval validation
+only. **Reviewer-style generation has NOT been validated**; whether the
+system reproduces a reviewer's voice is a question for the (not yet
+started) fine-tuning stage. Known limitations are listed in
+`evaluations/reports/rag_evaluation.md`.
+
+## Reproduction
+
+```bash
+python -m pip install -r requirements.txt
+# then see docs/methodology/rag_reproduction.md for the exact,
+# step-by-step reproduction commands (cleaning → indexes → evaluation)
 ```
 
-**Validate schema after collection:**
-```python
-import json
-required = {"pr_number","pr_title","pr_url","pr_description","author",
-            "merged_at","files_changed","review_comments","pr_level_reviews"}
-with open("jreback_reviews.jsonl") as f:
-    for i, line in enumerate(f, 1):
-        obj = json.loads(line)
-        missing = required - obj.keys()
-        if missing:
-            print(f"Line {i}: missing keys {missing}")
-print("Validation complete.")
-```
+## Future Work
+
+- Optional longer-context embedding experiment (MiniLM's 256-token window
+  is the main representation constraint)
+- LoRA/QLoRA reviewer adaptation on the cleaned datasets
+- Local Ollama inference wired to the per-reviewer RAG indexes
+- End-to-end evaluation of generated reviews against held-out history
