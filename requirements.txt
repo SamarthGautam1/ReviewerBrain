@@ -14,5 +14,9 @@ chromadb==1.5.9
 # Configuration
 pyyaml>=6.0.1
 
+# Optional: BERTScore for generation evaluation
+# (scripts/inference/evaluate_generations.py --bertscore)
+# bert-score>=0.3.12
+
 # Tests
 pytest>=8.0

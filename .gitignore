@@ -44,6 +44,10 @@ models/
 hf_cache/
 .reviewer_cache/
 
+# Project: local-LLM inference run artifacts (generated; regenerated via
+# scripts/inference/run_review_generation.py + evaluate_generations.py)
+evaluations/inference/
+
 # Logs and temporary artifacts
 *.log
 *.tmp

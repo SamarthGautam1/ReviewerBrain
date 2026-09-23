@@ -1,4 +1,4 @@
-# ReviewerBrain — `collect_reviews.py`
+# ReviewerBrain — `collect_review_comments.py`
 
 A resumable Python script that mines GitHub pull-request history and extracts
 `(code diff, reviewer comment)` pairs for **one specific reviewer**, formatted
@@ -44,7 +44,7 @@ set GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ### Dry run (no file written — prints 5 PRs to stdout)
 ```bash
-python collect_reviews.py \
+python collect_review_comments.py \
   --repo python/cpython \
   --reviewer gvanrossum \
   --dry-run \
@@ -53,7 +53,7 @@ python collect_reviews.py \
 
 ### Capped run (write up to 50 matched PRs)
 ```bash
-python collect_reviews.py \
+python collect_review_comments.py \
   --repo pandas-dev/pandas \
   --reviewer jreback \
   --output jreback_reviews.jsonl \
@@ -62,7 +62,7 @@ python collect_reviews.py \
 
 ### Full run (all merged PRs, resumable)
 ```bash
-python collect_reviews.py \
+python collect_review_comments.py \
   --repo pandas-dev/pandas \
   --reviewer jreback \
   --output jreback_reviews.jsonl
@@ -74,11 +74,11 @@ startup, notes which PR numbers are already present, and skips them.
 
 ```bash
 # First run (killed after 10 minutes):
-python collect_reviews.py --repo pandas-dev/pandas --reviewer jreback \
+python collect_review_comments.py --repo pandas-dev/pandas --reviewer jreback \
   --output jreback_reviews.jsonl
 
 # Resume (picks up where it left off):
-python collect_reviews.py --repo pandas-dev/pandas --reviewer jreback \
+python collect_review_comments.py --repo pandas-dev/pandas --reviewer jreback \
   --output jreback_reviews.jsonl
 ```
 

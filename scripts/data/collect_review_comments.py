@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-collect_reviews.py — ReviewerBrain data-collection script.
+collect_review_comments.py — ReviewerBrain data-collection script.
 
 Mines a GitHub repository's pull-request history and extracts
 (code diff, reviewer comment) pairs for ONE target reviewer.
 
 Usage:
-    python collect_reviews.py \\
+    python collect_review_comments.py \\
         --repo pandas-dev/pandas \\
         --reviewer jreback \\
         --output jreback_reviews.jsonl \\
@@ -40,7 +40,7 @@ logging.basicConfig(
     format="%(asctime)s  %(levelname)-8s  %(message)s",
     datefmt="%H:%M:%S",
 )
-log = logging.getLogger("collect_reviews")
+log = logging.getLogger("collect_review_comments")
 
 
 # ---------------------------------------------------------------------------

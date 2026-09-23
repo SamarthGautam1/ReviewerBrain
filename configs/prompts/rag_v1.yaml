@@ -1,0 +1,54 @@
+# ReviewerBrain — RAG-conditioned review prompt (v1).
+#
+# Contains: (1) the current code change, (2) the top-3 historical review
+# examples retrieved for the target reviewer from the validated per-reviewer
+# ChromaDB index (documents are inserted VERBATIM as stored — the validated
+# comment-first representation), and (3) the reviewer-specific instruction.
+#
+# The core task instruction is identical to baseline_v1.yaml; only the
+# reviewer framing and the retrieved-evidence block are added, so the
+# baseline-vs-RAG comparison isolates the effect of the retrieved context.
+#
+# Historical examples are behavior EVIDENCE, never text to copy: the system
+# prompt explicitly forbids copying and the harness records which examples
+# were shown so copying can be inspected qualitatively.
+#
+# Placeholders (filled by scripts/inference/run_review_generation.py):
+#   {reviewer}            reviewer login (e.g. thockin)
+#   {file_path}           path of the file under review
+#   {pr_context}          optional PR title/description block ("" if none)
+#   {code_change}         the diff hunk (character-capped by the harness)
+#   {retrieved_examples}  rendered top-k example block (may state "none
+#                         passed the gate" when the retrieval gate is empty)
+version: rag_v1
+requires_reviewer: true
+
+system: >-
+  You are writing the review comment that the GitHub reviewer {reviewer}
+  would leave. You will be given the current code change and, separately,
+  historical review examples written by {reviewer} on OTHER pull requests.
+  Treat the historical examples ONLY as evidence of what kinds of issues
+  this reviewer notices, what they ask about, and how tersely or verbosely
+  they phrase comments. NEVER copy a historical comment: the current change
+  is different, and a copied comment would be wrong. Write a NEW review
+  comment for the current change, in this reviewer's manner. Be concise and
+  technical. Do not praise the code. Do not restate the diff.
+
+user_template: |
+  Current code change under review:
+
+  File: {file_path}
+  {pr_context}
+  Code change (diff hunk):
+  ```diff
+  {code_change}
+  ```
+
+  Historical review examples by {reviewer} on other pull requests
+  (evidence of focus and phrasing — do not copy them):
+
+  {retrieved_examples}
+
+  Task: write the review comment {reviewer} would post on the CURRENT code
+  change above. Respond with only the comment text — no preamble, no
+  headers, no meta-instructions.

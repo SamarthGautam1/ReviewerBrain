@@ -42,8 +42,11 @@ GitHub history → preprocessing → reviewer-specific knowledge (RAG index)
   indexes, deterministic leakage-free held-out evaluation (496 queries).
 - **Quantum-inspired retrieval (fidelity = cos²): evaluated** — produced
   *no measurable advantage* over cosine; cosine is the frozen metric.
+- **Local LLM baseline + RAG inference: piloted** — Ollama +
+  `qwen2.5-coder:7b` (Q4_K_M, RTX 4050 6 GB, greedy decoding), generic
+  baseline vs RAG-conditioned prompts on 20 deterministic held-out queries
+  (`evaluations/reports/local_llm_baseline.md`).
 - **LoRA/QLoRA fine-tuning: NOT started.**
-- **Ollama inference: NOT started.**
 
 ## Repository Structure
 
@@ -52,11 +55,13 @@ GitHub history → preprocessing → reviewer-specific knowledge (RAG index)
 | `data/raw/` | Raw PR-level JSONL datasets (Git LFS) + reviewer-candidate CSV |
 | `data/processed/` | Cleaned datasets (generated, gitignored, regenerable) |
 | `src/reviewerbrain/` | Source package: representation, embeddings, split, metrics, config |
-| `scripts/` | Runnable CLIs: `data/`, `retrieval/`, `evaluation/` |
+| `scripts/` | Runnable CLIs: `data/`, `retrieval/`, `evaluation/`, `inference/` |
 | `configs/rag/default.yaml` | Frozen RAG configuration (mirrored by tests) |
+| `configs/prompts/` | Versioned inference prompts (`baseline_v1`, `rag_v1`) |
 | `indexes/chroma/v2/` | Validated ChromaDB indexes (generated, gitignored) |
 | `evaluations/heldout/` | Frozen 496-query held-out evaluation artifact (LFS) |
-| `evaluations/reports/` | Reports for the validated representation and evaluation |
+| `evaluations/inference/` | LLM run artifacts: generations, manifests, metrics (generated, gitignored) |
+| `evaluations/reports/` | Reports for the validated representation, evaluation, and local-LLM baseline |
 | `docs/methodology/` | Reproducibility documentation |
 | `docs/experiments/` | Historical stage reports (audit, cleaning, v1 RAG) |
 | `experiments/archive/` | Superseded scripts (v1 RAG) |
@@ -94,6 +99,15 @@ started) fine-tuning stage. Known limitations are listed in
 python -m pip install -r requirements.txt
 # then see docs/methodology/rag_reproduction.md for the exact,
 # step-by-step reproduction commands (cleaning → indexes → evaluation)
+```
+
+Local-LLM review generation (requires a running Ollama server on
+127.0.0.1:11434 and the `qwen2.5-coder:7b` model):
+
+```bash
+python scripts/inference/run_review_generation.py --tag <run> --queries 10 --mode both
+python scripts/inference/evaluate_generations.py \
+    --run-dir evaluations/inference/<run> [--bertscore]
 ```
 
 ## Future Work
