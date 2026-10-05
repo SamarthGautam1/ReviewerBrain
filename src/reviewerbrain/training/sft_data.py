@@ -232,6 +232,17 @@ def write_reviewer_files(out_dir, reviewer, train_ex, val_ex, stats,
     return stats_path
 
 
+def load_template_checked(name):
+    """Load a prompt template for SFT use; the template must be
+    reviewer-conditioned (the supervised objective is reviewer-specific)."""
+    tpl = pr.load_template(name)
+    if not tpl.get("requires_reviewer"):
+        raise ValueError(f"SFT template must be reviewer-conditioned: {name}")
+    if "{reviewer}" not in tpl["system"] and "{reviewer}" not in tpl["user_template"]:
+        raise ValueError(f"SFT template carries no reviewer placeholder: {name}")
+    return tpl
+
+
 def load_training_sft_config(config_path=None):
     """SFT section of the training config with defaults filled in."""
     with open(config_path or paths.TRAINING_CONFIG_PATH, "r",

@@ -49,6 +49,7 @@ training:
   bf16: false
   logging_steps: 10
   save_strategy: "no"        # adapters are saved explicitly at the end
+  optim: paged_adamw_8bit    # memory-paged 8-bit AdamW (bitsandbytes)
   seed: 42
   max_seq_length: 2048
 

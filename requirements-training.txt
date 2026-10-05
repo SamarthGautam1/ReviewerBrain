@@ -1,0 +1,15 @@
+# ReviewerBrain LoRA/QLoRA training dependencies.
+#
+# Installed ONLY in the training environment (Kaggle GPU notebook — see
+# kaggle/README.md). Never installed on the local development machine;
+# the local machine does not train or run models. The training report
+# (training_report.json) records the exact versions actually used.
+#
+# Ranges rather than hard pins: the report is the reproducibility record.
+# bitsandbytes needs a CUDA GPU (the QLoRA quantization path).
+
+torch>=2.4,<3
+transformers>=4.46,<5
+accelerate>=1.0
+peft>=0.13
+bitsandbytes>=0.44

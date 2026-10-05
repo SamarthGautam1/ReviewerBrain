@@ -15,15 +15,20 @@ REVIEWERS = ("thockin", "ezyang")
 QUANT_TYPES = ("nf4", "fp4")
 SCHEDULERS = ("linear", "cosine", "cosine_with_restarts", "constant")
 SAVE_STRATEGIES = ("no", "epoch", "steps")
+OPTIMIZERS = ("paged_adamw_8bit", "adamw_bnb_8bit", "adamw_torch",
+              "adamw_torch_fused")
 
 
 class TrainingConfigError(ValueError):
     pass
 
 
+def _config_path(path=None):
+    return Path(path) if path else paths.TRAINING_CONFIG_PATH
+
+
 def load_training_config(path=None):
-    p = Path(path) if path else paths.TRAINING_CONFIG_PATH
-    with open(p, "r", encoding="utf-8") as f:
+    with open(_config_path(path), "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     validate_training_config(cfg)
     return cfg
@@ -108,6 +113,8 @@ def validate_training_config(cfg):
              "training.logging_steps must be an int >= 1")
     _require(t.get("save_strategy") in SAVE_STRATEGIES,
              f"training.save_strategy must be one of {SAVE_STRATEGIES}")
+    _require(t.get("optim") in OPTIMIZERS,
+             f"training.optim must be one of {OPTIMIZERS}")
     _require(isinstance(t.get("seed"), int), "training.seed must be an int")
     msl = t.get("max_seq_length")
     _require(isinstance(msl, int) and 128 <= msl <= 32768,
