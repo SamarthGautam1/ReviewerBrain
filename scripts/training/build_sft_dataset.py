@@ -63,7 +63,7 @@ def main(argv=None):
         else sft["val_position"]
     out_dir = Path(args.out_dir) if args.out_dir \
         else ROOT / sft["sft_dir"]
-    template = pr_template(sft["prompt_template"])
+    template = sft_data.load_template_checked(sft["prompt_template"])
     reviewers = (["thockin", "ezyang"] if args.reviewer == "both"
                  else [args.reviewer])
 
@@ -90,14 +90,6 @@ def main(argv=None):
         json.dump({"sft_config": sft, "reviewers": all_stats}, f, indent=2)
     print(f"wrote {summary_path}")
     return 0
-
-
-def pr_template(name):
-    from reviewerbrain.inference import prompts as pr
-    tpl = pr.load_template(name)
-    if not tpl.get("requires_reviewer"):
-        raise SystemExit(f"SFT template must be reviewer-conditioned: {name}")
-    return tpl
 
 
 if __name__ == "__main__":
