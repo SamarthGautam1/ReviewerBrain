@@ -44,6 +44,16 @@ models/
 hf_cache/
 .reviewer_cache/
 
+# Project: LoRA training artifacts (trained on Kaggle — see
+# docs/methodology/lora_training.md and kaggle/README.md). Adapter
+# binaries and training checkpoints are intentionally NOT committed;
+# training_report.json files travel WITH the adapter, outside git.
+adapters/
+checkpoints/
+
+# Kaggle CLI credentials (never commit)
+.kaggle/
+
 # Project: local-LLM inference run artifacts (generated; regenerated via
 # scripts/inference/run_review_generation.py + evaluate_generations.py)
 evaluations/inference/

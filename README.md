@@ -2,9 +2,11 @@
 
 ReviewerBrain replicates the review behavior of a specific GitHub code
 reviewer — not a generic reviewer — by converting that person's historical
-PR review comments into a reviewer-specific retrieval knowledge base (RAG),
-and later fine-tuning a local LLM on the same data. Everything runs locally:
-no cloud APIs, no data egress.
+PR review comments into a reviewer-specific retrieval knowledge base (RAG)
+and fine-tuning reviewer-specific LoRA adapters on the same data. All
+development runs locally with no cloud APIs and no data egress; LoRA
+training is the one deliberate exception — it runs as a self-contained
+workflow on Kaggle GPU.
 
 ## Problem
 
@@ -28,7 +30,11 @@ conditions a fine-tuned local model.
 
 ```
 GitHub history → preprocessing → reviewer-specific knowledge (RAG index)
-              → retrieval → local LLM (planned) → personalized review
+              → retrieval ─┐
+reviewer history → SFT → reviewer-specific LoRA (Kaggle, pending)
+                           ▼
+              four-mode generation (base / base_rag / lora / lora_rag)
+              → personalized review → demo UI
 ```
 
 ## Current Status
@@ -46,31 +52,45 @@ GitHub history → preprocessing → reviewer-specific knowledge (RAG index)
   `qwen2.5-coder:7b` (Q4_K_M, RTX 4050 6 GB, greedy decoding), generic
   baseline vs RAG-conditioned prompts on 20 deterministic held-out queries
   (`evaluations/reports/local_llm_baseline.md`).
-- **LoRA/QLoRA fine-tuning: NOT started.**
+- **SFT data pipeline + LoRA/QLoRA training implementation: complete** —
+  leakage-guarded reviewer-specific SFT datasets, validated QLoRA
+  configuration, Kaggle GPU training workflow, adapter registry, and the
+  four-mode pipeline (`base` / `base_rag` / `lora` / `lora_rag`) with a
+  demonstration UI. See `docs/methodology/lora_training.md`.
+- **LoRA/QLoRA training: NOT yet performed** — no adapter, checkpoint, or
+  training result exists. The Kaggle workflow (`kaggle/`) is ready; the
+  expensive step runs there, not locally.
+- **Four-mode generation evaluation: NOT started** (planned after the
+  first Kaggle training run).
 
 ## Repository Structure
 
 | Directory | Contents |
 |---|---|
 | `data/raw/` | Raw PR-level JSONL datasets (Git LFS) + reviewer-candidate CSV |
-| `data/processed/` | Cleaned datasets (generated, gitignored, regenerable) |
-| `src/reviewerbrain/` | Source package: representation, embeddings, split, metrics, config |
-| `scripts/` | Runnable CLIs: `data/`, `retrieval/`, `evaluation/`, `inference/` |
+| `data/processed/` | Cleaned + SFT datasets (generated, gitignored, regenerable) |
+| `src/reviewerbrain/` | Source package: representation, embeddings, split, metrics, config, training (SFT + config), inference (modes, adapters, backends) |
+| `scripts/` | Runnable CLIs: `data/`, `retrieval/`, `evaluation/`, `inference/`, `training/` |
 | `configs/rag/default.yaml` | Frozen RAG configuration (mirrored by tests) |
-| `configs/prompts/` | Versioned inference prompts (`baseline_v1`, `rag_v1`) |
+| `configs/prompts/` | Versioned inference/SFT prompts (`baseline_v1`, `rag_v1`, `sft_v1`) |
+| `configs/training/` | LoRA/QLoRA training configuration (validated by tests) |
+| `kaggle/` | Kaggle GPU training notebook + workflow guide |
+| `ui/` | Streamlit demonstration UI (mock/loopback backends) |
+| `adapters/`, `checkpoints/` | LoRA adapters + training checkpoints (gitignored — trained on Kaggle) |
 | `indexes/chroma/v2/` | Validated ChromaDB indexes (generated, gitignored) |
 | `evaluations/heldout/` | Frozen 496-query held-out evaluation artifact (LFS) |
 | `evaluations/inference/` | LLM run artifacts: generations, manifests, metrics (generated, gitignored) |
 | `evaluations/reports/` | Reports for the validated representation, evaluation, and local-LLM baseline |
-| `docs/methodology/` | Reproducibility documentation |
+| `docs/methodology/` | Reproducibility documentation (RAG + LoRA training) |
 | `docs/experiments/` | Historical stage reports (audit, cleaning, v1 RAG) |
 | `experiments/archive/` | Superseded scripts (v1 RAG) |
-| `tests/` | Unit tests for representation, split, paths, config |
+| `tests/` | Unit tests: representation, split, paths, config, SFT data, training, pipeline |
 
 Source vs generated: everything under `src/`, `scripts/`, `configs/`,
-`tests/`, `docs/` is source; `data/processed/`, `indexes/`,
-`evaluations/heldout/` are generated (see `docs/methodology/rag_reproduction.md`
-for exact regeneration commands).
+`tests/`, `docs/`, `kaggle/`, `ui/` is source; `data/processed/`,
+`indexes/`, `evaluations/inference/`, `adapters/`, `checkpoints/` are
+generated (see `docs/methodology/rag_reproduction.md` and
+`docs/methodology/lora_training.md` for exact regeneration commands).
 
 ## Current RAG Configuration (frozen)
 
@@ -82,6 +102,31 @@ for exact regeneration commands).
   (`indexes/chroma/v2/`)
 - Retrieval: top-k = 3, cosine gate ≥ 0.5 (results below dropped)
 - Evaluation split: per reviewer, every 5th PR (sorted by number) held out
+
+## LoRA fine-tuning stage (implemented — training pending)
+
+Four deliberately separate generation modes
+(`reviewerbrain.inference.pipeline`):
+
+| mode | prompt | retrieval | adapter |
+|---|---|---|---|
+| `base` | `baseline_v1` | — | — |
+| `base_rag` | `rag_v1` | frozen RAG (top-3, gate ≥ 0.5) | — |
+| `lora` | `sft_v1` | — | reviewer-specific |
+| `lora_rag` | `rag_v1` | frozen RAG | reviewer-specific |
+
+- SFT data: PR-level leakage guards (frozen held-out PRs fully excluded,
+  deterministic PR-level validation carve-out, `follow_up_patch` never
+  rendered, RAG examples never used as training data). Built with
+  `scripts/training/build_sft_dataset.py` → `data/processed/sft/`.
+- Training: QLoRA on `Qwen2.5-Coder-7B-Instruct`, one unmerged adapter
+  per reviewer, configured entirely by
+  `configs/training/lora_qwen25coder7b.yaml`; executed on Kaggle GPU via
+  `kaggle/train_lora.ipynb` (see `kaggle/README.md`). The local machine
+  never loads a model.
+- Status: implemented and unit-tested; **no adapter or training result
+  exists yet** — `docs/methodology/lora_training.md` is the methodology
+  and run log.
 
 ## Evaluation
 
@@ -110,10 +155,31 @@ python scripts/inference/evaluate_generations.py \
     --run-dir evaluations/inference/<run> [--bertscore]
 ```
 
+Local-LLM review generation (requires a running Ollama server on
+127.0.0.1:11434 and the `qwen2.5-coder:7b` model):
+
+```bash
+python scripts/inference/run_review_generation.py --tag <run> --queries 10 --mode both
+python scripts/inference/evaluate_generations.py \
+    --run-dir evaluations/inference/<run> [--bertscore]
+```
+
+Four-mode pipeline (mock backend by default — no model loading; add
+`--backend ollama` for a local server, adapters after a Kaggle run):
+
+```bash
+python scripts/training/build_sft_dataset.py          # SFT data (deterministic)
+python scripts/inference/run_pipeline.py --tag <run> --mode all
+streamlit run ui/app.py                               # demonstration UI
+```
+
 ## Future Work
 
+- Run the Kaggle QLoRA training (`kaggle/train_lora.ipynb`) and log the
+  run in `docs/methodology/lora_training.md`
+- Four-mode generation evaluation over the held-out queries
+  (`scripts/inference/run_pipeline.py`) — including whether LoRA closes
+  the reviewer-concern gap RAG alone did not
 - Optional longer-context embedding experiment (MiniLM's 256-token window
   is the main representation constraint)
-- LoRA/QLoRA reviewer adaptation on the cleaned datasets
-- Local Ollama inference wired to the per-reviewer RAG indexes
-- End-to-end evaluation of generated reviews against held-out history
+- Human evaluation of generated reviews
