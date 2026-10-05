@@ -1,0 +1,63 @@
+# ReviewerBrain — LoRA/QLoRA training configuration (Qwen2.5-Coder-7B-Instruct).
+#
+# Validated by tests/test_training_config.py against the constants in
+# reviewerbrain.training.config (same convention as configs/rag/default.yaml).
+# All values are configurable; nothing here is hardcoded in the training
+# script. Training itself is designed to run on Kaggle GPU (see
+# kaggle/README.md) — this repository does NOT train locally.
+#
+# NOTE (documented in docs/methodology/lora_training.md): as of this
+# commit the training has NOT been run; no adapter, loss value, or
+# evaluation result exists yet.
+
+base_model: Qwen/Qwen2.5-Coder-7B-Instruct
+# The instruct weights are the training base. The Ollama artifact
+# (qwen2.5-coder:7b, Q4_K_M) is a serving quantization and is NOT used
+# for training or as the training base.
+
+reviewers: [thockin, ezyang]
+
+quantization:
+  # QLoRA: 4-bit nf4 base, LoRA adapters trained in fp16.
+  load_in_4bit: true
+  bnb_4bit_quant_type: nf4
+  bnb_4bit_use_double_quant: true
+  bnb_4bit_compute_dtype: float16   # Kaggle T4/P100 have no bf16 support
+
+lora:
+  task_type: CAUSAL_LM
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  bias: none
+
+training:
+  # output_root is a Kaggle path by default (adapters land in the notebook
+  # output); override with --out-root on any other machine.
+  output_root: /kaggle/working/adapters
+  learning_rate: 0.0002
+  num_train_epochs: 3
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16
+  gradient_checkpointing: true
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  fp16: true
+  bf16: false
+  logging_steps: 10
+  save_strategy: "no"        # adapters are saved explicitly at the end
+  seed: 42
+  max_seq_length: 2048
+
+sft:
+  # Supervised data section — consumed by build_sft_dataset.py and the
+  # training script so both use one definition of the dataset.
+  prompt_template: sft_v1
+  sft_dir: data/processed/sft   # relative to repo root (regenerable)
+  val_period: 10                # PR-level validation carve-out from the
+  val_position: 9               # NON-held-out PRs (deterministic, no RNG)
+  diff_max_chars: 6000          # must match inference harness caps
+  desc_max_chars: 1000
