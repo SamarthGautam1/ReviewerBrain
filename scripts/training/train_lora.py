@@ -141,16 +141,25 @@ class Collator:
 
     def __call__(self, features):
         import torch
+        from torch.nn.utils.rnn import pad_sequence
 
-        max_len = max(len(f["input_ids"]) for f in features)
-        batch = {}
-        for key, pad_value in (("input_ids", self.pad_id),
-                               ("labels", -100),
-                               ("attention_mask", 0)):
-            batch[key] = torch.tensor(
-                [f[key] + [pad_value] * (max_len - len(f[key]))
-                 for f in features], dtype=torch.long)
-        return batch
+        return {
+            "input_ids": pad_sequence(
+                [f["input_ids"] for f in features],
+                batch_first=True,
+                padding_value=self.pad_id,
+            ),
+            "labels": pad_sequence(
+                [f["labels"] for f in features],
+                batch_first=True,
+                padding_value=-100,
+            ),
+            "attention_mask": pad_sequence(
+                [f["attention_mask"] for f in features],
+                batch_first=True,
+                padding_value=0,
+            ),
+        }
 
 
 def build_tokenized_split(records, reviewer, tok, sft_cfg, training_cfg):
